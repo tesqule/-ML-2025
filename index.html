@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Detector</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Traffic Detector</h1>
+            <p>Детекция транспортных средств и пешеходов</p>
+        </header>
+
+        <div class="class-tags">
+            <span class="tag tag-pedestrian">Пешеходы</span>
+            <span class="tag tag-car">Машины</span>
+            <span class="tag tag-motorbike">Мотоциклы</span>
+            <span class="tag tag-truck">Грузовики</span>
+        </div>
+
+        <div class="upload-section">
+            <h3>Загрузите изображение</h3>
+            <p>Поддерживаемые форматы: JPG, PNG, WEBP, GIF</p>
+            <p style="color: #666; font-size: 14px; margin-top: 5px;">Максимальный размер: 15MB</p>
+            <form id="upload-form" enctype="multipart/form-data">
+                <label class="btn">
+                    📁 Выбрать файл
+                    <input type="file" name="file" accept="image/*" id="file-input" style="display:none;">
+                </label>
+                <div id="preview-container" style="display: none; margin-top: 20px;">
+                    <img id="preview-image" style="max-width: 300px; max-height: 300px; border-radius: 5px; object-fit: contain;">
+                    <div id="file-info" style="margin-top: 10px; color: #666; font-size: 14px;"></div>
+                    <div style="margin-top: 15px;">
+                        <button type="button" class="btn" onclick="uploadImage()">🔍 Анализировать</button>
+                        <button type="button" class="btn btn-cancel" onclick="cancelUpload()">❌ Отмена</button>
+                    </div>
+                </div>
+            </form>
+            <div id="loading" style="display: none; margin-top: 20px;">
+                <div class="spinner"></div>
+                <p>Обработка изображения...</p>
+                <p style="font-size: 14px; color: #666; margin-top: 5px;">Это может занять несколько секунд</p>
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 5px;">
+            <h3 style="margin-top: 0;">Как это работает?</h3>
+            <p style="color: #666; line-height: 1.6;">
+                <strong>1.</strong> Загрузите изображение с транспортными средствами или пешеходами<br>
+                <strong>2.</strong> Ансамбль моделей (ваша модель + YOLOv8) проанализирует изображение<br>
+                <strong>3.</strong> Система определит и подсчитает объекты 4 классов<br>
+                <strong>4.</strong> Вы увидите результат с выделенными объектами и статистикой
+            </p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        // Обновляем отображение информации о файле
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileInfo = document.getElementById('file-info');
+                const size = formatFileSize(file.size);
+                const name = file.name.length > 30 ? file.name.substring(0, 30) + '...' : file.name;
+
+                fileInfo.innerHTML = `
+                    <strong>Файл:</strong> ${name}<br>
+                    <strong>Размер:</strong> ${size}<br>
+                    <strong>Тип:</strong> ${file.type}
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

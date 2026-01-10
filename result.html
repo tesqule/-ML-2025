@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результаты анализа</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container result-container">
+        <header>
+            <a href="/" class="back-btn">← Назад</a>
+            <h1>Результаты анализа</h1>
+        </header>
+
+        <div class="result-grid">
+            <div>
+                <h3>Обработанное изображение</h3>
+                <div class="image-container">
+                    <img id="result-image" src="" alt="Результат">
+                </div>
+            </div>
+
+            <div class="stats">
+                <div class="total-card">
+                    Обнаружено объектов: <strong id="total-objects">0</strong>
+                </div>
+
+                <h3>Распределение по классам</h3>
+                <div class="class-stats">
+                    <div class="class-stat-item">
+                        <strong>Пешеходы</strong><br>
+                        <span id="pedestrian-count" style="font-size: 24px;">0</span><br>
+                        <small id="pedestrian-percent">0%</small>
+                    </div>
+                    <div class="class-stat-item">
+                        <strong>Машины</strong><br>
+                        <span id="car-count" style="font-size: 24px;">0</span><br>
+                        <small id="car-percent">0%</small>
+                    </div>
+                    <div class="class-stat-item">
+                        <strong>Мотоциклы</strong><br>
+                        <span id="motorbike-count" style="font-size: 24px;">0</span><br>
+                        <small id="motorbike-percent">0%</small>
+                    </div>
+                    <div class="class-stat-item">
+                        <strong>Грузовики</strong><br>
+                        <span id="truck-count" style="font-size: 24px;">0</span><br>
+                        <small id="truck-percent">0%</small>
+                    </div>
+                </div>
+
+                <h3>Обнаруженные объекты</h3>
+                <div id="detections-list">
+                    <!-- Здесь будут добавляться детекции -->
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <a href="/" class="back-btn" style="background: #007bff;">
+                        Загрузить другое изображение
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Функция для перевода названий классов на русский
+        function translateClassName(className) {
+            console.log("Перевод класса:", className);
+
+            const translations = {
+                'pedestrian': 'Пешеход',
+                'car': 'Машина',
+                'motorbike': 'Мотоцикл',
+                'truck': 'Грузовик',
+                'Пешеход': 'Пешеход',
+                'Машина': 'Машина',
+                'Мотоцикл': 'Мотоцикл',
+                'Грузовик': 'Грузовик'
+            };
+
+            // Приводим к нижнему регистру для сравнения
+            const lowerCaseClass = className.toLowerCase();
+
+            // Ищем соответствие
+            for (const [key, value] of Object.entries(translations)) {
+                if (key.toLowerCase() === lowerCaseClass) {
+                    return value;
+                }
+            }
+
+            return className; // Возвращаем как есть, если не нашли перевод
+        }
+
+        // Функция для получения цвета класса
+        function getClassColor(className) {
+            // Нормализуем имя класса
+            const normalizedClass = className.toLowerCase();
+
+            const colors = {
+                'pedestrian': '#28a745',
+                'пешеход': '#28a745',
+                'car': '#007bff',
+                'машина': '#007bff',
+                'motorbike': '#dc3545',
+                'мотоцикл': '#dc3545',
+                'truck': '#ffc107',
+                'грузовик': '#ffc107'
+            };
+
+            // Ищем точное совпадение
+            if (colors[normalizedClass]) {
+                return colors[normalizedClass];
+            }
+
+            // Ищем частичное совпадение
+            for (const [key, color] of Object.entries(colors)) {
+                if (normalizedClass.includes(key) || key.includes(normalizedClass)) {
+                    return color;
+                }
+            }
+
+            return '#007bff'; // Цвет по умолчанию
+        }
+
+        // Загружаем результаты из localStorage
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Страница результатов загружена");
+
+            const resultsStr = localStorage.getItem('detection_results');
+            console.log("Данные из localStorage:", resultsStr);
+
+            if (resultsStr) {
+                try {
+                    const results = JSON.parse(resultsStr);
+                    console.log("Результаты парсинга:", results);
+
+                    if (results.image) {
+                        document.getElementById('result-image').src = results.image;
+                    }
+
+                    if (results.total !== undefined) {
+                        document.getElementById('total-objects').textContent = results.total;
+                    }
+
+                    // Устанавливаем значения для каждого класса
+                    const classes = ['pedestrian', 'car', 'motorbike', 'truck'];
+                    classes.forEach(cls => {
+                        if (results.probabilities && results.probabilities[cls]) {
+                            const count = results.probabilities[cls].count || 0;
+                            const percent = results.probabilities[cls].probability_percent || '0%';
+
+                            document.getElementById(`${cls}-count`).textContent = count;
+                            document.getElementById(`${cls}-percent`).textContent = percent;
+                        }
+                    });
+
+                    // Отображаем список детекций
+                    const detectionsList = document.getElementById('detections-list');
+                    detectionsList.innerHTML = ''; // Очищаем
+
+                    if (results.detections && results.detections.length > 0) {
+                        console.log("Детекции для отображения:", results.detections);
+
+                        results.detections.forEach(det => {
+                            const div = document.createElement('div');
+                            div.className = 'detection-item';
+
+                            // Получаем имя класса
+                            const className = det.name || det.class || 'Неизвестно';
+                            console.log("Обработка детекции:", det);
+
+                            const russianName = translateClassName(className);
+                            const confidencePercent = det.confidence_percent ||
+                                                      (det.confidence ? `${(det.confidence * 100).toFixed(1)}%` : '0%');
+                            const color = getClassColor(className);
+
+                            // Создаем элемент
+                            div.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: ${color}">${det.id || '?'}. ${russianName}</strong>
+                                        <div style="color: #666; font-size: 12px; margin-top: 5px;">
+                                            Уверенность: <strong>${confidencePercent}</strong>
+                                        </div>
+                                        ${det.models ? `<div style="color: #888; font-size: 11px; margin-top: 3px;">
+                                            Модели: ${det.models}
+                                        </div>` : ''}
+                                        ${det.box ? `<div style="color: #999; font-size: 10px; margin-top: 2px;">
+                                            Координаты: [${det.box.join(', ')}]
+                                        </div>` : ''}
+                                    </div>
+                                </div>
+                            `;
+
+                            // Добавляем атрибут класса для CSS стилей
+                            div.setAttribute('data-class', className.toLowerCase());
+                            detectionsList.appendChild(div);
+                        });
+                    } else {
+                        console.log("Нет детекций для отображения");
+                        detectionsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><p>Объекты не обнаружены</p></div>';
+                    }
+                } catch (error) {
+                    console.error("Ошибка при обработке результатов:", error);
+                    const detectionsList = document.getElementById('detections-list');
+                    detectionsList.innerHTML = `
+                        <div style="text-align: center; padding: 30px; color: #666;">
+                            <p>Ошибка при загрузке результатов</p>
+                            <p style="font-size: 12px; color: #999;">${error.message}</p>
+                            <a href="/" class="back-btn" style="margin-top: 10px;">
+                                Вернуться на главную
+                            </a>
+                        </div>
+                    `;
+                }
+            } else {
+                console.log("Нет данных в localStorage");
+                // Если результатов нет, показываем сообщение
+                const detectionsList = document.getElementById('detections-list');
+                detectionsList.innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: #666;">
+                        <p>Нет данных результатов. Пожалуйста, загрузите изображение на главной странице.</p>
+                        <a href="/" class="back-btn" style="margin-top: 10px;">
+                            Вернуться на главную
+                        </a>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

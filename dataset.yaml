@@ -1,0 +1,9 @@
+names:
+- pedestrian
+- car
+- motorbike
+- truck
+nc: 4
+path: C:\Users\h_u_e_sos\PycharmProjects\kyrsml123
+train: train/images
+val: valid/images

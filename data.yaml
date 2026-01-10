@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 7
+names: ['bike', 'car', 'light', 'markup', 'moto', 'person', 'sign']
+
+roboflow:
+  workspace: oleg-milantiev-egsqq
+  project: road-bhozs
+  version: 5
+  license: MIT
+  url: https://universe.roboflow.com/oleg-milantiev-egsqq/road-bhozs/dataset/5
