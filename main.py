@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 from collections import defaultdict
 import uuid
+import threading
+import time
 
 app = Flask(__name__)
 app.secret_key = 'traffic_detector_secret_key_2024'
@@ -548,6 +550,181 @@ def load_html_file(filename):
         return None
 
 
+# ============================================================
+# ФУНКЦИЯ ОБУЧЕНИЯ МОДЕЛИ
+# ============================================================
+
+def train_custom_model(epochs=15):
+    """
+    Функция для обучения кастомной модели на 15 эпох
+
+    Args:
+        epochs (int): Количество эпох для обучения (по умолчанию 15)
+
+    Returns:
+        dict: Результаты обучения
+    """
+    print("\n" + "=" * 60)
+    print("🚀 ЗАПУСК ОБУЧЕНИЯ МОДЕЛИ")
+    print("=" * 60)
+
+    try:
+        # Определяем устройство для обучения
+        device = '0' if torch.cuda.is_available() else 'cpu'
+        print(f"⚙️  Используемое устройство: {device}")
+
+        # 1. Проверяем наличие данных для обучения
+        data_yaml_path = 'my_training/data.yaml'
+
+        if not os.path.exists(data_yaml_path):
+            print("❌ Файл data.yaml не найден!")
+            print("\n📋 Создайте data.yaml файл со следующей структурой:")
+            print("""
+# data.yaml
+path: ./dataset  # путь к датасету
+train: images/train  # папка с тренировочными изображениями
+val: images/val      # папка с валидационными изображениями
+
+# Классы
+nc: 4  # количество классов
+names: ['pedestrian', 'car', 'motorbike', 'truck']
+""")
+
+            # Создаем пример data.yaml
+            os.makedirs('my_training', exist_ok=True)
+            with open(data_yaml_path, 'w') as f:
+                f.write("""# data.yaml
+path: ./dataset
+train: images/train
+val: images/val
+
+nc: 4
+names: ['pedestrian', 'car', 'motorbike', 'truck']
+""")
+            print(f"✅ Создан пример data.yaml: {data_yaml_path}")
+            print("⚠️  Отредактируйте путь к вашим данным!")
+            return {'success': False, 'error': 'data.yaml не найден, создан пример'}
+
+        # 2. Загружаем базовую модель YOLO для обучения
+        print("📥 Загружаю базовую модель YOLOv8n для обучения...")
+        try:
+            model = YOLO('yolov8n.pt')
+            print("✅ Базовая модель загружена")
+        except Exception as e:
+            print(f"❌ Ошибка загрузки базовой модели: {e}")
+            return {'success': False, 'error': f'Ошибка загрузки модели: {e}'}
+
+        # 3. Запускаем обучение
+        print(f"\n🎯 Начинаю обучение на {epochs} эпохах...")
+        print("⏳ Это может занять несколько минут...")
+
+        # Параметры обучения
+        results = model.train(
+            data=data_yaml_path,
+            epochs=epochs,  # 15 эпох как вы просили
+            imgsz=640,  # размер изображения
+            batch=16,  # размер батча
+            patience=10,  # ранняя остановка
+            save=True,  # сохранять модель
+            save_period=5,  # сохранять каждые 5 эпох
+            project='my_training',  # папка проекта
+            name='custom_model',  # имя эксперимента
+            exist_ok=True,  # перезаписать если существует
+            pretrained=True,  # использовать предобученные веса
+            optimizer='SGD',  # оптимизатор (исправлено с 'S6D')
+            lr0=0.01,  # начальная скорость обучения
+            device=device,  # использовать GPU если доступно (исправлено с self.device)
+            workers=4,  # количество воркеров
+            seed=42,  # для воспроизводимости (исправлено с 'seeds=2')
+            verbose=True,  # вывод процесса обучения
+            plots=True,  # генерировать графики
+            resume=False,  # не продолжать с последней точки
+            amp=True,  # использовать смешанную точность
+        )
+
+        print("\n✅ Обучение завершено!")
+
+        # 4. Валидация после обучения
+        print("\n🧪 Запускаю валидацию модели...")
+        try:
+            # Загружаем лучшую обученную модель
+            best_model_path = 'my_training/custom_model/weights/best.pt'
+            if os.path.exists(best_model_path):
+                trained_model = YOLO(best_model_path)
+                metrics = trained_model.val()
+
+                print(f"📊 Результаты валидации:")
+                print(f"  ✅ mAP50-95: {metrics.box.map:.4f}")
+                print(f"  ✅ Precision: {metrics.box.p:.4f}")
+                print(f"  ✅ Recall: {metrics.box.r:.4f}")
+                print(f"  ✅ Обнаружено объектов: {len(metrics.box.ap)}")
+
+                val_results = {
+                    'map': float(metrics.box.map),
+                    'precision': float(metrics.box.p),
+                    'recall': float(metrics.box.r),
+                    'fitness': float(metrics.fitness) if hasattr(metrics, 'fitness') else 0.0
+                }
+            else:
+                print("⚠️  Файл best.pt не найден")
+                val_results = {}
+
+        except Exception as e:
+            print(f"⚠️  Ошибка валидации: {e}")
+            val_results = {}
+
+        # 5. Перезагружаем модель в детекторе
+        print("\n🔄 Обновляю модель в детекторе...")
+        try:
+            # Обновляем путь к модели
+            detector.custom_model_path = 'my_training/custom_model/weights/best.pt'
+
+            # Загружаем заново все модели
+            detector.models = []
+            detector.load_all_models()
+
+            print("✅ Модель успешно обновлена в детекторе")
+        except Exception as e:
+            print(f"⚠️  Ошибка обновления модели: {e}")
+
+        # 6. Собираем результаты
+        training_results = {
+            'success': True,
+            'message': f'Модель успешно обучена на {epochs} эпохах',
+            'epochs': epochs,
+            'model_path': 'my_training/custom_model/weights/best.pt',
+            'validation': val_results,
+            'files_created': [
+                'my_training/custom_model/weights/best.pt',
+                'my_training/custom_model/weights/last.pt',
+                'my_training/custom_model/args.yaml',
+                'my_training/custom_model/results.csv'
+            ]
+        }
+
+        print("\n📁 Созданные файлы:")
+        for file in training_results['files_created']:
+            if os.path.exists(file):
+                size = os.path.getsize(file) / 1024 / 1024
+                print(f"  📄 {file} ({size:.2f} MB)")
+
+        print("\n" + "=" * 60)
+        print("🎉 ОБУЧЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
+        print("=" * 60)
+
+        return training_results
+
+    except Exception as e:
+        print(f"\n❌ Ошибка при обучении: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+# ============================================================
+# ЭНДПОИНТЫ FLASK
+# ============================================================
+
 @app.route('/')
 def index():
     html_content = load_html_file('index.html')
@@ -680,6 +857,95 @@ def upload_file():
                 print(f"⚠️  Не удалось удалить временный файл: {e}")
 
 
+@app.route('/train', methods=['POST'])
+def train_endpoint():
+    """
+    Эндпоинт для запуска обучения модели через веб-интерфейс
+    """
+    try:
+        print("\n🎯 Запрос на обучение модели получен")
+
+        # Получаем параметры из запроса
+        data = request.json or {}
+        epochs = data.get('epochs', 15)  # По умолчанию 15 эпох
+
+        # Запускаем обучение в отдельном потоке, чтобы не блокировать сервер
+        def training_thread():
+            train_custom_model(epochs=epochs)
+
+        thread = threading.Thread(target=training_thread)
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            'success': True,
+            'message': f'Обучение модели запущено на {epochs} эпох',
+            'training_id': str(uuid.uuid4()),
+            'status': 'training_started',
+            'estimated_time': f'{epochs * 2} минут'  # Примерное время
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/train_status', methods=['GET'])
+def train_status():
+    """
+    Эндпоинт для проверки статуса обучения
+    """
+    # Проверяем наличие файлов обучения
+    training_files = [
+        'my_training/custom_model/weights/best.pt',
+        'my_training/custom_model/weights/last.pt',
+        'my_training/custom_model/results.csv'
+    ]
+
+    status = {
+        'model_exists': os.path.exists('my_training/custom_model/weights/best.pt'),
+        'files': {},
+        'training_in_progress': False  # В реальном проекте нужно отслеживать состояние
+    }
+
+    for file in training_files:
+        if os.path.exists(file):
+            status['files'][os.path.basename(file)] = {
+                'exists': True,
+                'size_mb': os.path.getsize(file) / 1024 / 1024
+            }
+        else:
+            status['files'][os.path.basename(file)] = {'exists': False}
+
+    return jsonify(status)
+
+
+@app.route('/model_info', methods=['GET'])
+def model_info():
+    """
+    Эндпоинт для получения информации о текущей модели
+    """
+    try:
+        info = {
+            'custom_model_loaded': detector.custom_model is not None,
+            'yolo_model_loaded': len([m for n, m in detector.models if n == 'yolov8n']) > 0,
+            'total_models': len(detector.models),
+            'classes': detector.classes,
+            'device': detector.device,
+            'custom_model_path': detector.custom_model_path,
+            'custom_model_exists': os.path.exists(detector.custom_model_path)
+        }
+
+        if detector.custom_model and hasattr(detector.custom_model, 'names'):
+            info['custom_model_classes'] = detector.custom_model.names
+
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("🚦 Traffic Detector")
@@ -687,6 +953,7 @@ if __name__ == "__main__":
     print("🎯 Классы: Пешеходы, Машины, Мотоциклы, Грузовики")
     print("🤝 Ансамбль: ваша модель + YOLOv8")
     print("📁 Поддерживаемые форматы: JPG, PNG, WEBP, GIF, BMP")
+    print("🔄 Функция обучения: POST /train (15 эпох)")
     print("=" * 60)
     print("📌 Откройте: http://localhost:5000")
     print("=" * 60)
